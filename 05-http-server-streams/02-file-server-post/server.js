@@ -29,29 +29,31 @@ server.on('request', async (req, res) => {
 
       // OPTION 1 - pass tests
       writeStream.on('error', (err) => {
+        req.unpipe(limitedStream).unpipe(writeStream);
         res.statusCode = 409;
         res.end('The file already exists');
-        return;
       });
 
       limitedStream.on('error', (err) => {
+        req.unpipe(limitedStream).unpipe(writeStream);
+        fsPromises.unlink(filepath);
         res.statusCode = 413;
         res.end('File size limit is 1 mb');
-        fsPromises.unlink(filepath);
-        return;
       });
 
-      stream.pipeline(
-        req,
-        limitedStream,
-        writeStream,
-        (err, data) => {
-          if (!err) {
-            res.statusCode = 201;
-            res.end();
-          }
-        },
-      );
+      req.on('error', () => {
+        req.unpipe(limitedStream).unpipe(writeStream);
+        fsPromises.unlink(filepath);
+        res.statusCode = 500;
+        res.end('File size limit is 1 mb');
+      });
+
+      writeStream.on('finish', () => {
+        res.statusCode = 201;
+        res.end();
+      });
+
+      req.pipe(limitedStream).pipe(writeStream);
 
       // OPTION 2 - doesn't pass tests (при попытке создания слишком большого файла - ошибка 413)
       // Reason: https://github.com/nodejs/node/issues/31630
