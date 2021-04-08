@@ -17,4 +17,20 @@ const categorySchema = new mongoose.Schema({
   subcategories: [subCategorySchema],
 });
 
+subCategorySchema.set('toJSON', {
+  virtuals: true,
+  versionKey: false,
+  transform: (doc, ret) => {
+    delete ret._id;
+  },
+});
+
+categorySchema.set('toJSON', {
+  virtuals: true,
+  versionKey: false,
+  transform: (doc, ret) => {
+    delete ret._id;
+  },
+});
+
 module.exports = connection.model('Category', categorySchema);
