@@ -1,8 +1,9 @@
+const fs = require('fs');
 const path = require('path');
 const Koa = require('koa');
 const Router = require('koa-router');
 const Session = require('./models/Session');
-const { v4: uuid } = require('uuid');
+const {v4: uuid} = require('uuid');
 const handleMongooseValidationError = require('./libs/validationErrors');
 const mustBeAuthenticated = require('./libs/mustBeAuthenticated');
 const {login} = require('./controllers/login');
@@ -10,6 +11,8 @@ const {oauth, oauthCallback} = require('./controllers/oauth');
 const {me} = require('./controllers/me');
 
 const app = new Koa();
+const apiRouter = new Router({prefix: '/api'});
+const indexFile = fs.readFileSync(path.join(__dirname, 'public/index.html'));
 
 app.use(require('koa-static')(path.join(__dirname, 'public')));
 app.use(require('koa-bodyparser')());
@@ -32,6 +35,9 @@ app.use(async (ctx, next) => {
 app.use((ctx, next) => {
   ctx.login = async function(user) {
     const token = uuid();
+    const session = await Session.create({token, user, lastVisit: new Date()});
+
+    await session.save();
 
     return token;
   };
@@ -39,33 +45,40 @@ app.use((ctx, next) => {
   return next();
 });
 
-const router = new Router({prefix: '/api'});
+apiRouter.use(async (ctx, next) => {
+  const header = ctx.request.get('Authorization') || '';
+  const token = (header.match(/Bearer\s+(.+)/) || [])[1];
 
-router.use(async (ctx, next) => {
-  const header = ctx.request.get('Authorization');
-  if (!header) return next();
+  if (!header || !token) return next();
+
+  const session = await Session.findOne({token}).populate('user');
+
+  if (!session) {
+    ctx.status = 401;
+    ctx.body = {error: 'Неверный аутентификационный токен'};
+    return;
+  }
+
+  session.lastVisit = new Date();
+  ctx.user = session.user;
+  await session.save();
 
   return next();
 });
 
-router.post('/login', login);
+apiRouter.post('/login', login);
+apiRouter.get('/oauth/:provider', oauth);
+apiRouter.post('/oauth_callback', handleMongooseValidationError, oauthCallback);
+apiRouter.get('/me', mustBeAuthenticated, me);
 
-router.get('/oauth/:provider', oauth);
-router.post('/oauth_callback', handleMongooseValidationError, oauthCallback);
-
-router.get('/me', me);
-
-app.use(router.routes());
+app.use(apiRouter.routes());
 
 // this for HTML5 history in browser
-const fs = require('fs');
-
-const index = fs.readFileSync(path.join(__dirname, 'public/index.html'));
 app.use(async (ctx) => {
   if (ctx.url.startsWith('/api') || ctx.method !== 'GET') return;
 
   ctx.set('content-type', 'text/html');
-  ctx.body = index;
+  ctx.body = indexFile;
 });
 
 module.exports = app;
