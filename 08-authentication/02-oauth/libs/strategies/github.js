@@ -7,7 +7,7 @@ module.exports = new GithubStrategy({
   clientID: config.providers.github.app_id,
   clientSecret: config.providers.github.app_secret,
   callbackURL: config.providers.github.callback_uri,
-  scope: ['user:email'],
+  scope: config.providers.github.options.scope,
   session: false,
 }, function(accessToken, refreshToken, profile, done) {
   authenticate('github', get(profile, 'emails[0].value'), profile.username, done);
